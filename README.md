@@ -14,11 +14,13 @@ Claude Code's image paste does not work on WSL. The CLI relies on `wl-paste` to 
 
 ## The Solution
 
-A `wl-paste` wrapper that reads the Windows clipboard directly, bypassing the broken WSLg bridge:
+`wl-paste` and `wl-copy` wrappers that bypass the broken WSLg clipboard bridge, using `win32yank.exe` and PowerShell to talk to the Windows clipboard directly:
 
-- **Text clipboard** → `win32yank.exe` (reads Windows clipboard directly)
-- **Image clipboard** → `powershell.exe` with `System.Windows.Forms.Clipboard` saves the image as PNG to a temp file via UNC path, then the wrapper reads it back
-- **Type detection + image save in one call** — since PowerShell is slow to start, the wrapper does both in a single invocation
+- **`wl-paste`** (read)
+  - Text → `win32yank.exe -o` (reads Windows clipboard directly)
+  - Images → `powershell.exe` saves clipboard image as PNG to a temp file via UNC path, wrapper reads it back — no binary-through-stdout corruption
+  - Type listing always reports both `text/plain` and `image/png` — avoids slow PowerShell calls on every check
+- **`wl-copy`** (write) → `win32yank.exe -i` (writes to Windows clipboard directly, eliminates ghost empty entries in clipboard history)
 
 Combined with a Claude Code keybinding (**Alt+V** → `chat:imagePaste`), this gives you working screenshot paste on WSL.
 
@@ -38,7 +40,8 @@ bash install.sh
 ```
 
 This will:
-- Install the `wl-paste` wrapper to `/usr/local/bin/wl-paste`
+- Install the `wl-paste` wrapper to `/usr/local/bin/wl-paste` (clipboard read)
+- Install the `wl-copy` wrapper to `/usr/local/bin/wl-copy` (clipboard write)
 - Create a Claude Code keybinding for **Alt+V** → image paste
 
 ## Usage

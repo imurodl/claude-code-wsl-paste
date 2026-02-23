@@ -11,42 +11,20 @@ TEMP_IMG="/tmp/.clipboard-image.png"
 # Auto-detect WSL distro name for UNC path
 WSL_DISTRO="${WSL_DISTRO_NAME:-Ubuntu}"
 
-# If listing types, check what's on the Windows clipboard
+# If listing types — always report both text and image as available.
+# PowerShell is NOT called here to avoid clipboard side effects.
+# The actual image read handles the "no image" case gracefully.
 if [[ "$*" == *"--list-types"* ]] || [[ "$*" == *"-l"* ]]; then
-    # Save image to temp file AND report types in one PowerShell call
-    img_result=$(powershell.exe -NoProfile -STA -Command "
-Add-Type -AssemblyName System.Windows.Forms
-try {
-    \$img = [System.Windows.Forms.Clipboard]::GetImage()
-    if (\$img -ne \$null) {
-        \$path = '\\\\wsl.localhost\\${WSL_DISTRO}${TEMP_IMG}'
-        \$img.Save(\$path, [System.Drawing.Imaging.ImageFormat]::Png)
-        \$img.Dispose()
-        Write-Output 'HAS_IMAGE'
-    }
-} catch {}
-" 2>/dev/null | tr -d '\r\n')
-
-    has_text=$($WIN32YANK -o 2>/dev/null | head -c1)
-
-    types=""
-    if [[ -n "$has_text" ]]; then
-        types="text/plain"
-    fi
-    if [[ "$img_result" == "HAS_IMAGE" ]] && [[ -f "$TEMP_IMG" ]]; then
-        types="${types:+$types$'\n'}image/png"
-    fi
-    echo "$types"
+    echo "text/plain"
+    echo "image/png"
     exit 0
 fi
 
-# If requesting image/png, return the pre-saved temp file
+# If requesting image/png, grab from Windows clipboard via PowerShell
 if [[ "$*" == *"image/png"* ]]; then
-    if [[ -f "$TEMP_IMG" ]]; then
-        cat "$TEMP_IMG"
-        exit 0
-    fi
-    # Fallback: try saving now
+    # Remove stale temp file
+    rm -f "$TEMP_IMG"
+
     powershell.exe -NoProfile -STA -Command "
 Add-Type -AssemblyName System.Windows.Forms
 try {
@@ -58,6 +36,7 @@ try {
     }
 } catch {}
 " 2>/dev/null
+
     if [[ -f "$TEMP_IMG" ]]; then
         cat "$TEMP_IMG"
         exit 0

@@ -22,12 +22,14 @@ if ! command -v powershell.exe &>/dev/null; then
     exit 1
 fi
 
-# Install wl-paste wrapper
+# Install wl-paste and wl-copy wrappers
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 sudo cp "$SCRIPT_DIR/wl-paste" /usr/local/bin/wl-paste
-sudo chmod +x /usr/local/bin/wl-paste
+sudo cp "$SCRIPT_DIR/wl-copy" /usr/local/bin/wl-copy
+sudo chmod +x /usr/local/bin/wl-paste /usr/local/bin/wl-copy
 
 echo "Installed wl-paste wrapper to /usr/local/bin/wl-paste"
+echo "Installed wl-copy wrapper to /usr/local/bin/wl-copy"
 
 # Set up Claude Code keybinding for Alt+V image paste
 KEYBINDINGS="$HOME/.claude/keybindings.json"
