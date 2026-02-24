@@ -1,34 +1,100 @@
 #!/usr/bin/env bash
-# wl-paste wrapper for WSL2 — adds BMP→PNG conversion for Claude Code
-# Delegates everything to the real wl-paste, only intercepts BMP→PNG.
+# wl-paste wrapper for WSL2 + Claude Code
 #
-# Based on approach by @gptool:
-# https://github.com/anthropics/claude-code/issues/3150
+# Two modes of operation:
+#   1. If WSLg clipboard works (wl-paste returns valid types), uses a thin
+#      BMP→PNG conversion layer via ImageMagick
+#   2. If WSLg clipboard is broken, falls back to win32yank.exe for text
+#      and PowerShell for images (bypasses WSLg entirely)
 #
 # Project: https://github.com/imurodl/claude-code-wsl-paste
 
 REAL_WL_PASTE="/usr/bin/wl-paste"
+WIN32YANK="win32yank.exe"
+TEMP_IMG="/tmp/.clipboard-image.png"
+WSL_DISTRO="${WSL_DISTRO_NAME:-Ubuntu}"
 
-# Detect --list-types or -l
-if [[ " $* " == *" --list-types "* ]] || [[ " $* " == *" -l "* ]]; then
+# Check if WSLg clipboard is functional (cache for 60s)
+CACHE_FILE="/tmp/.wslg-clipboard-check"
+wslg_works() {
+    if [[ -f "$CACHE_FILE" ]]; then
+        local age=$(( $(date +%s) - $(stat -c %Y "$CACHE_FILE") ))
+        if [[ $age -lt 60 ]]; then
+            cat "$CACHE_FILE"
+            return
+        fi
+    fi
+    if "$REAL_WL_PASTE" --list-types &>/dev/null; then
+        echo "yes" | tee "$CACHE_FILE"
+    else
+        echo "no" | tee "$CACHE_FILE"
+    fi
+}
+
+# === WSLg mode: thin wrapper, delegates to real wl-paste ===
+wslg_list_types() {
     output=$("$REAL_WL_PASTE" "$@" 2>/dev/null)
     rc=$?
     echo "$output"
-    # If clipboard has BMP but not PNG, advertise PNG too
     if echo "$output" | grep -q 'image/bmp' && ! echo "$output" | grep -q 'image/png'; then
         echo "image/png"
     fi
     exit $rc
-fi
+}
 
-# Detect --type image/png
-if [[ " $* " == *" --type image/png "* ]] || [[ " $* " =~ --type\ image/png$ ]]; then
-    # Try real wl-paste first
+wslg_image_png() {
     "$REAL_WL_PASTE" "$@" 2>/dev/null && exit 0
-    # Fall back: extract BMP, convert to PNG via ImageMagick
     "$REAL_WL_PASTE" --type image/bmp 2>/dev/null | convert bmp:- png:- 2>/dev/null
     exit $?
+}
+
+# === Fallback mode: win32yank + PowerShell (bypasses WSLg) ===
+fallback_list_types() {
+    echo "text/plain"
+    echo "image/png"
+    exit 0
+}
+
+fallback_image_png() {
+    rm -f "$TEMP_IMG"
+    powershell.exe -NoProfile -STA -Command "
+Add-Type -AssemblyName System.Windows.Forms
+try {
+    \$img = [System.Windows.Forms.Clipboard]::GetImage()
+    if (\$img -ne \$null) {
+        \$path = '\\\\wsl.localhost\\${WSL_DISTRO}${TEMP_IMG}'
+        \$img.Save(\$path, [System.Drawing.Imaging.ImageFormat]::Png)
+        \$img.Dispose()
+    }
+} catch {}
+" 2>/dev/null
+    if [[ -f "$TEMP_IMG" ]]; then
+        cat "$TEMP_IMG"
+        exit 0
+    fi
+    exit 1
+}
+
+# === Route to appropriate mode ===
+if [[ " $* " == *" --list-types "* ]] || [[ " $* " == *" -l "* ]] || [[ "$*" == "-l" ]]; then
+    if [[ "$(wslg_works)" == "yes" ]]; then
+        wslg_list_types "$@"
+    else
+        fallback_list_types
+    fi
 fi
 
-# Everything else: pass through unchanged
-exec "$REAL_WL_PASTE" "$@"
+if [[ " $* " == *" --type image/png "* ]] || [[ " $* " =~ --type\ image/png$ ]] || [[ "$*" == *"image/png"* ]]; then
+    if [[ "$(wslg_works)" == "yes" ]]; then
+        wslg_image_png "$@"
+    else
+        fallback_image_png
+    fi
+fi
+
+# Default: text paste
+if [[ "$(wslg_works)" == "yes" ]]; then
+    exec "$REAL_WL_PASTE" "$@"
+else
+    exec $WIN32YANK -o --lf
+fi

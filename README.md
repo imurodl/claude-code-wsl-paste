@@ -16,21 +16,19 @@ Claude Code's image paste does not work on WSL. The CLI relies on `wl-paste` to 
 
 ## The Solution
 
-A thin `wl-paste` wrapper that delegates everything to the real `/usr/bin/wl-paste` and only intercepts the BMP→PNG conversion case:
+A `wl-paste` wrapper that auto-detects your environment and picks the best approach:
 
-- When `wl-paste -l` is called and the clipboard has `image/bmp` but not `image/png`, it appends `image/png` to the output — this is what makes Claude Code's image detection succeed
-- When `wl-paste --type image/png` is called and the real `wl-paste` can't provide PNG, it grabs the BMP and converts it to PNG via ImageMagick
+### WSLg mode (when WSLg clipboard works)
+Delegates everything to the real `/usr/bin/wl-paste`, only intercepts BMP→PNG conversion via ImageMagick. Text, `wl-copy`, other MIME types — all pass through unchanged. Based on the approach by [@gptool](https://github.com/anthropics/claude-code/issues/3150).
 
-Text paste, `wl-copy`, other MIME types, all flags — everything else hits the real `wl-paste` unchanged.
+**Requires:** `imagemagick`, `wl-clipboard`
 
-Based on the approach by [@gptool](https://github.com/anthropics/claude-code/issues/3150).
+### Fallback mode (when WSLg clipboard is broken)
+Bypasses WSLg entirely using `win32yank.exe` for text and `powershell.exe` for images. Saves clipboard image to a temp file via UNC path to avoid binary corruption.
 
-## Requirements
+**Requires:** `win32yank.exe`, `powershell.exe`
 
-- WSL 2 (Ubuntu or other distro)
-- [ImageMagick](https://imagemagick.org/) (`sudo apt install imagemagick`)
-- [wl-clipboard](https://github.com/bugaevc/wl-clipboard) (`sudo apt install wl-clipboard`)
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI
+The wrapper caches the WSLg check for 60 seconds, so there's no overhead on repeated calls.
 
 ## Install
 
@@ -40,9 +38,7 @@ cd claude-code-wsl-paste
 bash install.sh
 ```
 
-This will:
-- Install the `wl-paste` wrapper to `/usr/local/bin/wl-paste`
-- Create a Claude Code keybinding for **Alt+V** → image paste
+The installer auto-detects which mode your system supports and warns about missing dependencies.
 
 ## Usage
 
@@ -50,7 +46,7 @@ This will:
 2. In Claude Code, press **Alt+V**
 3. The screenshot is pasted into your conversation
 
-Regular text copy/paste continues to work normally — the wrapper passes everything through unchanged.
+Regular text copy/paste continues to work normally.
 
 ## Uninstall
 
@@ -59,22 +55,6 @@ sudo rm /usr/local/bin/wl-paste
 ```
 
 The real `/usr/bin/wl-paste` takes over automatically.
-
-## How It Works
-
-```
-Alt+V in Claude Code
-  → calls wl-paste --list-types
-  → wrapper delegates to real wl-paste
-  → if clipboard has BMP but not PNG, appends "image/png" to output
-  → Claude Code sees image/png is available
-
-Claude Code requests image
-  → calls wl-paste --type image/png
-  → wrapper tries real wl-paste first
-  → if no PNG available, grabs BMP and pipes through ImageMagick convert
-  → returns PNG data to Claude Code
-```
 
 ## License
 
