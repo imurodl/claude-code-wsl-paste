@@ -1,48 +1,34 @@
-#!/bin/bash
-# wl-paste wrapper for WSL + Claude Code
-# Uses win32yank.exe for text and PowerShell for images,
-# bypassing WSLg clipboard bridge to avoid ghost empty entries in Windows clipboard history.
+#!/usr/bin/env bash
+# wl-paste wrapper for WSL2 — adds BMP→PNG conversion for Claude Code
+# Delegates everything to the real wl-paste, only intercepts BMP→PNG.
+#
+# Based on approach by @gptool:
+# https://github.com/anthropics/claude-code/issues/3150
 #
 # Project: https://github.com/imurodl/claude-code-wsl-paste
 
-WIN32YANK="win32yank.exe"
-TEMP_IMG="/tmp/.clipboard-image.png"
+REAL_WL_PASTE="/usr/bin/wl-paste"
 
-# Auto-detect WSL distro name for UNC path
-WSL_DISTRO="${WSL_DISTRO_NAME:-Ubuntu}"
-
-# If listing types — always report both text and image as available.
-# PowerShell is NOT called here to avoid clipboard side effects.
-# The actual image read handles the "no image" case gracefully.
-if [[ "$*" == *"--list-types"* ]] || [[ "$*" == *"-l"* ]]; then
-    echo "text/plain"
-    echo "image/png"
-    exit 0
-fi
-
-# If requesting image/png, grab from Windows clipboard via PowerShell
-if [[ "$*" == *"image/png"* ]]; then
-    # Remove stale temp file
-    rm -f "$TEMP_IMG"
-
-    powershell.exe -NoProfile -STA -Command "
-Add-Type -AssemblyName System.Windows.Forms
-try {
-    \$img = [System.Windows.Forms.Clipboard]::GetImage()
-    if (\$img -ne \$null) {
-        \$path = '\\\\wsl.localhost\\${WSL_DISTRO}${TEMP_IMG}'
-        \$img.Save(\$path, [System.Drawing.Imaging.ImageFormat]::Png)
-        \$img.Dispose()
-    }
-} catch {}
-" 2>/dev/null
-
-    if [[ -f "$TEMP_IMG" ]]; then
-        cat "$TEMP_IMG"
-        exit 0
+# Detect --list-types or -l
+if [[ " $* " == *" --list-types "* ]] || [[ " $* " == *" -l "* ]]; then
+    output=$("$REAL_WL_PASTE" "$@" 2>/dev/null)
+    rc=$?
+    echo "$output"
+    # If clipboard has BMP but not PNG, advertise PNG too
+    if echo "$output" | grep -q 'image/bmp' && ! echo "$output" | grep -q 'image/png'; then
+        echo "image/png"
     fi
-    exit 1
+    exit $rc
 fi
 
-# Default: text paste via win32yank
-exec $WIN32YANK -o --lf
+# Detect --type image/png
+if [[ " $* " == *" --type image/png "* ]] || [[ " $* " =~ --type\ image/png$ ]]; then
+    # Try real wl-paste first
+    "$REAL_WL_PASTE" "$@" 2>/dev/null && exit 0
+    # Fall back: extract BMP, convert to PNG via ImageMagick
+    "$REAL_WL_PASTE" --type image/bmp 2>/dev/null | convert bmp:- png:- 2>/dev/null
+    exit $?
+fi
+
+# Everything else: pass through unchanged
+exec "$REAL_WL_PASTE" "$@"

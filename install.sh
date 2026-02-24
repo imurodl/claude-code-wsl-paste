@@ -10,26 +10,24 @@ if [[ -z "$WSL_DISTRO_NAME" ]]; then
 fi
 
 # Check dependencies
-if ! command -v win32yank.exe &>/dev/null; then
-    echo "Error: win32yank.exe not found in PATH."
-    echo "Install it: https://github.com/equalsraf/win32yank/releases"
-    echo "  Or via scoop: scoop install win32yank"
+if ! command -v convert &>/dev/null; then
+    echo "Error: ImageMagick not found. Install it:"
+    echo "  sudo apt install imagemagick"
     exit 1
 fi
 
-if ! command -v powershell.exe &>/dev/null; then
-    echo "Error: powershell.exe not found (WSL interop may be disabled)."
+if ! command -v /usr/bin/wl-paste &>/dev/null; then
+    echo "Error: wl-paste not found. Install it:"
+    echo "  sudo apt install wl-clipboard"
     exit 1
 fi
 
-# Install wl-paste and wl-copy wrappers
+# Install wl-paste wrapper
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 sudo cp "$SCRIPT_DIR/wl-paste" /usr/local/bin/wl-paste
-sudo cp "$SCRIPT_DIR/wl-copy" /usr/local/bin/wl-copy
-sudo chmod +x /usr/local/bin/wl-paste /usr/local/bin/wl-copy
+sudo chmod +x /usr/local/bin/wl-paste
 
 echo "Installed wl-paste wrapper to /usr/local/bin/wl-paste"
-echo "Installed wl-copy wrapper to /usr/local/bin/wl-copy"
 
 # Set up Claude Code keybinding for Alt+V image paste
 KEYBINDINGS="$HOME/.claude/keybindings.json"
